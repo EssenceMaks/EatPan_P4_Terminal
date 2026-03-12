@@ -33,10 +33,10 @@ import { randomBytes } from 'crypto'
 const TOPIC = 'eatpan-chat'
 
 // ─── Relay/Bootstrap адреси ───
-// Поки що використовуємо локальний relay.
-// Для продакшну замінити на публічний IP/домен.
-// Формат: /ip4/<IP>/tcp/<PORT>/p2p/<PEER_ID>
-const RELAY_ADDRS = (process.env.RELAY_ADDRS || '')
+// AWS EC2 relay (eu-central-1, free tier)
+const DEFAULT_RELAY = '/ip4/63.177.83.41/tcp/9090/p2p/12D3KooWMjkMb6pR7SFWrgZ9fXeUZHHpYyhrTpmMtbEeCgr7zUrd'
+
+const RELAY_ADDRS = (process.env.RELAY_ADDRS || DEFAULT_RELAY)
   .split(',')
   .map(s => s.trim())
   .filter(Boolean)
