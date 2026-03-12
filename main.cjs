@@ -67,21 +67,54 @@ async function setupAutoUpdater() {
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = true
 
+    // Логування
+    autoUpdater.logger = {
+      info: (...args) => console.log('[Updater]', ...args),
+      warn: (...args) => console.warn('[Updater]', ...args),
+      error: (...args) => console.error('[Updater]', ...args),
+      debug: (...args) => console.log('[Updater:debug]', ...args),
+    }
+
+    autoUpdater.on('checking-for-update', () => {
+      console.log('[Updater] Checking for update...')
+    })
     autoUpdater.on('update-available', (info) => {
+      console.log('[Updater] Update available:', info.version)
       if (mainWindow) mainWindow.webContents.send('update-available', {
         version: info.version, releaseNotes: info.releaseNotes
       })
     })
+    autoUpdater.on('update-not-available', () => {
+      console.log('[Updater] No update available')
+    })
     autoUpdater.on('download-progress', (progress) => {
+      console.log(`[Updater] Download: ${Math.round(progress.percent)}%`)
       if (mainWindow) mainWindow.webContents.send('update-progress', {
         percent: Math.round(progress.percent)
       })
     })
     autoUpdater.on('update-downloaded', () => {
+      console.log('[Updater] Download complete!')
       if (mainWindow) mainWindow.webContents.send('update-downloaded')
     })
+    autoUpdater.on('error', (err) => {
+      console.error('[Updater] Error:', err.message)
+      if (mainWindow) mainWindow.webContents.send('update-error', {
+        message: err.message
+      })
+    })
 
-    ipcMain.on('download-update', () => autoUpdater.downloadUpdate())
+    ipcMain.on('download-update', async () => {
+      try {
+        console.log('[Updater] Starting download...')
+        await autoUpdater.downloadUpdate()
+      } catch (e) {
+        console.error('[Updater] Download failed:', e.message)
+        if (mainWindow) mainWindow.webContents.send('update-error', {
+          message: e.message
+        })
+      }
+    })
     ipcMain.on('install-update', () => autoUpdater.quitAndInstall())
 
     autoUpdater.checkForUpdates()

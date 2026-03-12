@@ -518,6 +518,22 @@
       $updateBtn.textContent = 'Перезапустити'
       $updateBtn.onclick = () => window.eatpan.installUpdate()
     })
+
+    window.eatpan.onUpdateError((err) => {
+      $updateBanner.classList.add('show')
+      $updateText.textContent = '❌ Помилка: ' + err.message
+      $updateText.style.color = '#f87171'
+      $updateProgress.style.display = 'none'
+      $updateBtn.disabled = false
+      $updateBtn.textContent = 'Спробувати ще'
+      $updateBtn.onclick = () => {
+        $updateText.style.color = ''
+        $updateText.textContent = 'Перевірка...'
+        $updateBtn.disabled = true
+        $updateBtn.textContent = '...'
+        window.eatpan.downloadUpdate()
+      }
+    })
   </script>
 </body>
 </html>
