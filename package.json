@@ -38,6 +38,7 @@
     "directories": {
       "output": "dist"
     },
+    "artifactName": "${productName}-Setup-${version}.${ext}",
     "files": [
       "main.cjs",
       "p2p.mjs",
