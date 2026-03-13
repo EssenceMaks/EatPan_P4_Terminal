@@ -179,9 +179,10 @@ sudo certbot renew
 - Let's Encrypt SSL (auto-renewal)
 - Web-chat: `wss://relay.eatpan.com` (multiaddr: `/dns4/relay.eatpan.com/tcp/443/wss/p2p/<PeerId>`)
 
-### TODO: Elastic IP
-- Поточний IP може змінитися при stop/start EC2
-- Потрібно додати Elastic IP або DNS update script
+### ✅ Elastic IP (Static)
+- Прив'язано стабільну адресу: `63.183.129.246`
+- **ВАЖЛИВО**: Онови DNS A-record для `relay.eatpan.com` на цей новий IP!
+- Клієнти (`p2p.mjs`, `p2p-browser.mjs`) тепер використовують DNS замість IP.
 
 ---
 

@@ -37,7 +37,7 @@ import { randomBytes } from 'crypto'
 const TOPIC = 'eatpan-chat'
 
 // ─── Relay/Bootstrap адреси ───
-const DEFAULT_RELAY = '/ip4/63.177.83.41/tcp/9090/p2p/12D3KooWPjuetDeAeyArEwXZtnnyRm9E4sgbLkS4y9myzESB8pa5'
+const DEFAULT_RELAY = '/dns4/relay.eatpan.com/tcp/9090/p2p/12D3KooWPjuetDeAeyArEwXZtnnyRm9E4sgbLkS4y9myzESB8pa5'
 const RELAY_PEER_ID = '12D3KooWPjuetDeAeyArEwXZtnnyRm9E4sgbLkS4y9myzESB8pa5'
 
 const RELAY_ADDRS = (process.env.RELAY_ADDRS || DEFAULT_RELAY)
