@@ -38,6 +38,10 @@ import { randomUUID } from 'crypto'
 
 const TOPIC = 'eatpan-chat'
 
+// Safe console.log — EPIPE-proof (Electron stdout pipe can break)
+function log(...args) { try { console.log(...args) } catch {} }
+function warn(...args) { try { console.warn(...args) } catch {} }
+
 // ─── Relay/Bootstrap адреси ───
 const DEFAULT_RELAY = '/dns4/relay.eatpan.com/tcp/9090/p2p/12D3KooWPjuetDeAeyArEwXZtnnyRm9E4sgbLkS4y9myzESB8pa5'
 const RELAY_PEER_ID = '12D3KooWPjuetDeAeyArEwXZtnnyRm9E4sgbLkS4y9myzESB8pa5'
@@ -166,18 +170,18 @@ export async function createP2PBackend(callbacks = {}, backboneClient = null) {
     }
   })
 
-  console.log(`[P2P] Started: ${nodeName} (${peerId.substring(0, 12)}...)`)
+  log(`[P2P] Started: ${nodeName} (${peerId.substring(0, 12)}...)`)
   if (RELAY_ADDRS.length > 0) {
-    console.log(`[P2P] Relay: ${RELAY_ADDRS.length} addr(s), PeerIDs: ${[...RELAY_PEER_IDS].map(s => s.substring(0,12)).join(', ')}`)
+    log(`[P2P] Relay: ${RELAY_ADDRS.length} addr(s), PeerIDs: ${[...RELAY_PEER_IDS].map(s => s.substring(0,12)).join(', ')}`)
   } else {
-    console.log(`[P2P] No relay configured — mDNS only`)
+    log(`[P2P] No relay configured — mDNS only`)
   }
 
   // ─── P2P Events ───
   node.addEventListener('peer:connect', (evt) => {
     const remote = evt.detail.toString()
     const route = getRoute(remote)
-    console.log(`[P2P] Connected [${route}]: ${remote.substring(0, 16)}...`)
+    log(`[P2P] Connected [${route}]: ${remote.substring(0, 16)}...`)
     callbacks.onConnected?.(remote)
   })
 
@@ -186,7 +190,7 @@ export async function createP2PBackend(callbacks = {}, backboneClient = null) {
     onlinePeers.delete(remote)
     discoveredViaMdns.delete(remote)
     discoveredViaBootstrap.delete(remote)
-    console.log(`[P2P] Disconnected: ${remote.substring(0, 16)}...`)
+    log(`[P2P] Disconnected: ${remote.substring(0, 16)}...`)
     callbacks.onDisconnected?.(remote)
     callbacks.onPeersUpdate?.(Object.fromEntries(onlinePeers))
   })
@@ -292,7 +296,7 @@ export async function createP2PBackend(callbacks = {}, backboneClient = null) {
       if (!subscribedTopics.has(topic)) {
         node.services.pubsub.subscribe(topic)
         subscribedTopics.add(topic)
-        console.log(`[P2P] Subscribed to topic: ${topic.substring(0, 30)}...`)
+        log(`[P2P] Subscribed to topic: ${topic.substring(0, 30)}...`)
       }
     },
 
@@ -304,7 +308,7 @@ export async function createP2PBackend(callbacks = {}, backboneClient = null) {
       if (subscribedTopics.has(topic)) {
         node.services.pubsub.unsubscribe(topic)
         subscribedTopics.delete(topic)
-        console.log(`[P2P] Unsubscribed from topic: ${topic.substring(0, 30)}...`)
+        log(`[P2P] Unsubscribed from topic: ${topic.substring(0, 30)}...`)
       }
     },
 
@@ -344,7 +348,7 @@ export async function createP2PBackend(callbacks = {}, backboneClient = null) {
       clearInterval(pingInterval)
       await backboneClient?.flush()  // → Flush pending sync before stop
       await node.stop()
-      console.log('[P2P] Stopped')
+      log('[P2P] Stopped')
     }
   }
 }

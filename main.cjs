@@ -8,15 +8,22 @@
  * libp2p (ESM-only) завантажується через dynamic import().
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 
 const isDev = process.argv.includes('--dev')
 
 // Suppress EPIPE errors (broken stdout pipe during console.log)
+// Override Electron's error dialog to suppress EPIPE popups
+const origShowErrorBox = dialog.showErrorBox
+dialog.showErrorBox = (title, content) => {
+  if (content?.includes('EPIPE')) return  // silently ignore
+  origShowErrorBox(title, content)
+}
 process.on('uncaughtException', (err) => {
   if (err.code === 'EPIPE' || err.message?.includes('EPIPE')) return
-  console.error('[FATAL]', err)
+  // Only show dialog for non-EPIPE errors
+  origShowErrorBox('Error', err.stack || err.message)
   process.exit(1)
 })
 
