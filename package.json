@@ -1,6 +1,6 @@
 {
   "name": "eatpan-l4l3-client",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "EatPan L4/L3 — Decentralized P2P Chat Client with Seeder Mode",
   "author": "EssenceMaks <admin@eatpan.com>",
   "license": "MIT",
@@ -63,18 +63,25 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.png"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.social-networking",
       "icon": "assets/icon.png"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Network",
       "icon": "assets/icon.png"
     },
