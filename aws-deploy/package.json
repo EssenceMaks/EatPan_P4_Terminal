@@ -1,16 +1,16 @@
 {
   "name": "eatpan-relay",
   "version": "2.0.0",
-  "description": "EatPan AWS Relay — DHT Bootstrap + GossipSub Hub",
+  "description": "EatPan AWS — DHT Phonebook + Circuit Relay Server",
   "type": "module",
   "main": "relay.mjs",
   "scripts": {
     "start": "node relay.mjs"
   },
   "dependencies": {
-    "@chainsafe/libp2p-gossipsub": "^14.1.2",
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.1",
+    "@libp2p/circuit-relay-v2": "^4.1.6",
     "@libp2p/identify": "^4.0.13",
     "@libp2p/kad-dht": "^16.1.6",
     "@libp2p/peer-id-factory": "^4.2.6",

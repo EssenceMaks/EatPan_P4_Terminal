@@ -272,7 +272,7 @@
 <!-- libp2p local bundle (built by web-chat/build.mjs) -->
 <script type="module">
   // ── Local bundle import (replaces broken CDN) ──
-  import { createLibp2p, webSockets, wsAllFilter, noise, yamux, gossipsub, identify, ping, bootstrap, multiaddr } from './chat-bundle.js'
+  import { createLibp2p, webSockets, wsAllFilter, noise, yamux, gossipsub, identify, ping, bootstrap, circuitRelayTransport, multiaddr } from './chat-bundle.js'
 
   // ── Config ──
   const TOPIC = 'eatpan-chat'
@@ -354,7 +354,13 @@
       addLog(`Bootstrap chain: ${bootstrapList.length} addr(s) — user: ${userAddrs.length}, AWS fallback: 1`)
 
       node = await createLibp2p({
-        transports: [webSockets({ filter: wsAllFilter })],
+        addresses: {
+          listen: ['/p2p-circuit']     // listen via relay so Electron peers can reach us
+        },
+        transports: [
+          webSockets({ filter: wsAllFilter }),
+          circuitRelayTransport({ discoverRelays: 1 })   // connect through AWS relay
+        ],
         connectionEncrypters: [noise()],
         streamMuxers: [yamux()],
         connectionManager: {

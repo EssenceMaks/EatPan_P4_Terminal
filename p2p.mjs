@@ -44,6 +44,7 @@ import { identify } from '@libp2p/identify'
 import { ping } from '@libp2p/ping'
 import { bootstrap } from '@libp2p/bootstrap'
 import { kadDHT } from '@libp2p/kad-dht'
+import { circuitRelayTransport } from '@libp2p/circuit-relay-v2'
 import { randomBytes, randomUUID } from 'crypto'
 import { multiaddr } from '@multiformats/multiaddr'
 
@@ -118,13 +119,16 @@ export async function createP2PBackend(callbacks = {}, backboneSync = null) {
     peerDiscovery.push(bootstrap({ list: BOOTSTRAP_ADDRS }))
   }
 
-  // ─── Transports ───
-  const transports = [tcp(), webSockets()]
+  // ─── Transports: TCP + WS + Circuit Relay ───
+  const transports = [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })]
 
   // ─── Create libp2p node ───
   const node = await createLibp2p({
     addresses: {
-      listen: ['/ip4/0.0.0.0/tcp/0']
+      listen: [
+        '/ip4/0.0.0.0/tcp/0',
+        '/p2p-circuit'    // listen via relay so other peers can reach us
+      ]
     },
     connectionGater: {
       denyDialMultiaddr: async () => false
