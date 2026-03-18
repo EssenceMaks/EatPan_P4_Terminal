@@ -42,7 +42,6 @@ import { yamux } from '@chainsafe/libp2p-yamux'
 import { gossipsub } from '@chainsafe/libp2p-gossipsub'
 import { identify } from '@libp2p/identify'
 import { ping } from '@libp2p/ping'
-import { mdns } from '@libp2p/mdns'
 import { bootstrap } from '@libp2p/bootstrap'
 import { kadDHT } from '@libp2p/kad-dht'
 import { randomBytes, randomUUID } from 'crypto'
@@ -68,11 +67,6 @@ const BOOTSTRAP_ADDRS = (process.env.BOOTSTRAP_ADDRS || BOOTSTRAP_NODE)
   .map(s => s.trim().replace(/["']/g, ''))
   .filter(Boolean)
 
-// Fixed ports for same-machine discovery
-const L4_PORT = parseInt(process.env.L4_PORT || '9100')
-const L2_PORT = parseInt(process.env.L2_PORT || '9200')
-const L1_PORT = parseInt(process.env.L1_PORT || '9300')
-
 const BOOTSTRAP_PEER_IDS = new Set(
   BOOTSTRAP_ADDRS.map(addr => {
     const parts = addr.split('/p2p/')
@@ -88,10 +82,6 @@ const BOOTSTRAP_PEER_IDS = new Set(
  */
 export async function createP2PBackend(callbacks = {}, backboneSync = null) {
   const nodeName = 'User-' + randomBytes(3).toString('hex')
-
-  // ─── Discovery source tracking ───
-  const discoveredViaMdns = new Set()
-  const discoveredViaBootstrap = new Set()
 
   // ─── Message dedup ───
   const sentMessageIds = new Set()
@@ -122,28 +112,25 @@ export async function createP2PBackend(callbacks = {}, backboneSync = null) {
     } catch { return false }
   }
 
-  // ─── Peer discovery modules ───
-  const peerDiscovery = [mdns({ interval: 2000 })]
+  // ─── Peer discovery: Bootstrap ONLY (no mDNS) ───
+  const peerDiscovery = []
   if (BOOTSTRAP_ADDRS.length > 0) {
     peerDiscovery.push(bootstrap({ list: BOOTSTRAP_ADDRS }))
   }
 
-  // ─── Transports (NO circuit relay — pure direct connections) ───
+  // ─── Transports ───
   const transports = [tcp(), webSockets()]
 
   // ─── Create libp2p node ───
   const node = await createLibp2p({
     addresses: {
-      listen: [
-        `/ip4/0.0.0.0/tcp/${L4_PORT}`,
-        '/ip4/0.0.0.0/tcp/0'  // also listen on random port
-      ]
+      listen: ['/ip4/0.0.0.0/tcp/0']
     },
     connectionGater: {
-      denyDialMultiaddr: async () => false // Allow dialing local IPs
+      denyDialMultiaddr: async () => false
     },
     connectionManager: {
-      minConnections: 0,
+      minConnections: 5,   // maintain at least 5 connections
       maxConnections: 50,
       inboundUpgradeTimeout: 30000,
     },
@@ -155,14 +142,14 @@ export async function createP2PBackend(callbacks = {}, backboneSync = null) {
       identify: identify(),
       ping: ping(),
       dht: kadDHT({
-        clientMode: true, // L4 = DHT client
+        clientMode: true,
         protocol: DHT_PROTOCOL
       }),
       pubsub: gossipsub({
         emitSelf: false,
         allowPublishToZeroTopicPeers: true,
-        floodPublish: true,  // ensures messages reach all peers in small networks
-        heartbeatInterval: 1000,  // faster heartbeat for mesh maintenance
+        floodPublish: true,
+        heartbeatInterval: 1000,
       })
     }
   })
@@ -178,7 +165,6 @@ export async function createP2PBackend(callbacks = {}, backboneSync = null) {
   // ─── Route detection ───
   function getRoute(remotePeerId) {
     if (BOOTSTRAP_PEER_IDS.has(remotePeerId)) return 'dht-bootstrap'
-
     const conns = node.getConnections(remotePeerId)
     let hasDirectConn = false
     for (const conn of conns) {
@@ -186,11 +172,7 @@ export async function createP2PBackend(callbacks = {}, backboneSync = null) {
       if (addr.includes('/p2p-circuit/')) return 'relay'
       hasDirectConn = true
     }
-
-    if (discoveredViaMdns.has(remotePeerId) && hasDirectConn) return 'direct'
     if (!hasDirectConn) return 'relay'
-
-    // Check if connection is to a local network IP
     for (const conn of conns) {
       const addr = conn.remoteAddr.toString()
       const ipMatch = addr.match(/\/ip4\/([\d.]+)\//)
@@ -201,95 +183,87 @@ export async function createP2PBackend(callbacks = {}, backboneSync = null) {
         }
       }
     }
-    return 'relay'
+    return 'dht'
   }
 
-  // ─── Peer discovery events — AUTO-DIAL on discovery! ───
+  // ─── Peer discovery — auto-dial ───
   node.addEventListener('peer:discovery', (evt) => {
     const discoveredId = evt.detail.id.toString()
-    if (discoveredId === peerId) return // skip self
-
-    const addrs = evt.detail.multiaddrs?.map(a => a.toString()) || []
-    const hasLocalAddr = addrs.some(a => {
-      const m = a.match(/\/ip4\/([\d.]+)\//)
-      return m && (m[1].startsWith('192.168.') || m[1].startsWith('10.') || m[1].startsWith('172.') || m[1] === '127.0.0.1')
-    })
-
-    if (hasLocalAddr && !BOOTSTRAP_PEER_IDS.has(discoveredId)) {
-      discoveredViaMdns.add(discoveredId)
-    } else {
-      discoveredViaBootstrap.add(discoveredId)
-    }
-
-    // *** AUTO-DIAL: libp2p v3 does NOT auto-dial on discovery ***
-    log(`[P2P] 🔍 Discovered peer: ${discoveredId.substring(0, 16)}... (${hasLocalAddr ? 'mDNS/LAN' : 'bootstrap'})`)
-    addDiscoveryEvent('peer-found', `Discovered: ${discoveredId.substring(0, 16)}... via ${hasLocalAddr ? 'mDNS' : 'bootstrap'}`)
+    if (discoveredId === peerId) return
+    log(`[P2P] 🔍 Discovered peer: ${discoveredId.substring(0, 16)}...`)
+    addDiscoveryEvent('peer-found', `Discovered: ${discoveredId.substring(0, 16)}...`)
     node.dial(evt.detail.id).then(() => {
-      log(`[P2P] ✅ Auto-dial success: ${discoveredId.substring(0, 16)}...`)
-      addDiscoveryEvent('auto-dial', `Connected to ${discoveredId.substring(0, 16)}...`)
+      log(`[P2P] ✅ Connected: ${discoveredId.substring(0, 16)}...`)
+      addDiscoveryEvent('connected', `Connected to ${discoveredId.substring(0, 16)}...`)
     }).catch(err => {
-      log(`[P2P] ⚠ Auto-dial failed: ${discoveredId.substring(0, 16)}... — ${err.message}`)
+      log(`[P2P] ⚠ Dial failed: ${discoveredId.substring(0, 16)}... — ${err.message}`)
     })
   })
 
-  log(`[P2P] Started L4 Client: ${nodeName} (${peerId.substring(0, 12)}...)`)
-  log(`[P2P] Listening on port ${L4_PORT}`)
-
-  // ─── Direct localhost dial to L2 (port 9200) and L1 (port 9300) ───
-  async function dialLocalhost(port, label) {
-    try {
-      const addr = multiaddr(`/ip4/127.0.0.1/tcp/${port}`)
-      await node.dial(addr, { signal: AbortSignal.timeout(5000) })
-      log(`[P2P] ✅ Connected to ${label} at localhost:${port}`)
-      addDiscoveryEvent('local-connect', `Connected to ${label} at localhost:${port}`)
-    } catch (err) {
-      log(`[P2P] ⚠ ${label} at localhost:${port} not reachable: ${err.message}`)
-      addDiscoveryEvent('local-miss', `${label} at localhost:${port} not reachable`)
-    }
-  }
-
-  // Try connecting to L2 and L1 on fixed ports after a short delay
-  setTimeout(async () => {
-    await dialLocalhost(L2_PORT, 'L2 SuperNode')
-    await dialLocalhost(L1_PORT, 'L1 Admin')
-  }, 2000)
-
-  // ─── Explicit bootstrap dial (AWS) ───
-  if (BOOTSTRAP_ADDRS.length > 0) {
-    log(`[P2P] Bootstrap DHT: ${BOOTSTRAP_ADDRS.length} addr(s)`)
-    setTimeout(async () => {
-      try {
-        log(`[P2P] Dialing Bootstrap Node: ${BOOTSTRAP_ADDRS[0]}`)
-        await node.dial(multiaddr(BOOTSTRAP_ADDRS[0]))
-        log(`[P2P] Bootstrap connection successful!`)
-        addDiscoveryEvent('bootstrap', `Connected to AWS DHT Bootstrap`)
-      } catch (err) {
-        warn(`[P2P] Bootstrap dial failed:`, err.message)
-        addDiscoveryEvent('bootstrap-fail', `AWS Bootstrap unreachable: ${err.message}`)
-      }
-    }, 2000)
-  } else {
-    log(`[P2P] No bootstrap configured — mDNS only`)
-  }
-
-  // ─── Connection events ───
+  // ─── TAG PEERS on connect to prevent connection manager pruning ───
   node.addEventListener('peer:connect', (evt) => {
     const remote = evt.detail.toString()
     const route = getRoute(remote)
     log(`[P2P] + Connected [${route}]: ${remote.substring(0, 16)}...`)
-    callbacks.onConnected?.(remote)
+    // Tag this peer as important — prevents connection manager from pruning
+    node.peerStore.merge(evt.detail, {
+      tags: {
+        'keep-alive': { value: 100, ttl: 600000 }  // keep for 10 minutes
+      }
+    }).catch(() => {})
   })
 
   node.addEventListener('peer:disconnect', (evt) => {
     const remote = evt.detail.toString()
-    onlinePeers.delete(remote)
-    discoveredViaMdns.delete(remote)
-    discoveredViaBootstrap.delete(remote)
-    log(`[P2P] - Disconnected: ${remote.substring(0, 16)}...`)
-    callbacks.onDisconnected?.(remote)
-    callbacks.onPeersUpdate?.(Object.fromEntries(onlinePeers))
+    if (remote !== peerId) {
+      onlinePeers.delete(remote)
+      log(`[P2P] - Disconnected: ${remote.substring(0, 16)}...`)
+    }
   })
 
+  log(`[P2P] Started L4 Client: ${nodeName} (${peerId.substring(0, 12)}...)`)
+
+  // ─── Bootstrap dial ───
+  if (BOOTSTRAP_ADDRS.length > 0) {
+    log(`[P2P] Bootstrap DHT: ${BOOTSTRAP_ADDRS.length} addr(s)`)
+    setTimeout(async () => {
+      for (const addr of BOOTSTRAP_ADDRS) {
+        try {
+          log(`[P2P] Dialing Bootstrap: ${addr}`)
+          await node.dial(multiaddr(addr), { signal: AbortSignal.timeout(10000) })
+          log(`[P2P] ✅ Bootstrap connected!`)
+          addDiscoveryEvent('bootstrap', `Connected to bootstrap`)
+        } catch (err) {
+          log(`[P2P] ⚠ Bootstrap failed: ${err.message}`)
+          addDiscoveryEvent('bootstrap-fail', `Bootstrap failed: ${err.message}`)
+        }
+      }
+    }, 1000)
+  }
+
+  // ─── Keepalive: ping all peers every 15s to keep connections alive ───
+  setInterval(async () => {
+    const connections = node.getConnections()
+    for (const conn of connections) {
+      try {
+        await node.services.ping.ping(conn.remotePeer, { signal: AbortSignal.timeout(5000) })
+      } catch {}
+    }
+  }, 15000)
+
+  // ─── Periodic reconnect: retry bootstrap every 30s if low connections ───
+  setInterval(async () => {
+    if (node.getConnections().length < 2 && BOOTSTRAP_ADDRS.length > 0) {
+      log('[P2P] Low connections, retrying bootstrap...')
+      addDiscoveryEvent('reconnect', 'Retrying bootstrap (low connections)')
+      for (const addr of BOOTSTRAP_ADDRS) {
+        try {
+          await node.dial(multiaddr(addr), { signal: AbortSignal.timeout(10000) })
+          log(`[P2P] ✅ Reconnected via bootstrap`)
+        } catch {}
+      }
+    }
+  }, 30000)
   // ─── Message handler (multi-topic) ───
   node.services.pubsub.addEventListener('message', (evt) => {
     const topic = evt.detail.topic
